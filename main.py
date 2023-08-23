@@ -1,72 +1,50 @@
-import json
-import random
-import numpy
-import nltk
-nltk.download('punkt')
+import pandas as pd
+import yfinance as yf
+import xgboost as xgb
+import plotly.graph_objects as go
+import os
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
 
-with open("Knowledge_Base.json") as json_data:
-  data = json.load(json_data)
+ticker = "AAPL"
+start_date = "2020-01-01"
+end_date = "2023-01-01"
 
+data = yf.download(ticker,start = start_date,end=end_date)
 
-words = []
-documents = []
-classes = []
+df = pd.DataFrame(data)
 
-for intent in data["intents"]:
-  for pattern in intent["patterns"]:
-    word = nltk.word_tokenize(pattern)
+#use the date as the index
+df['date']=pd.to_datetime(df.index)
 
-    words.extend(word)
-    documents.append((word, intent["tag"]))
+#candlestick chart
+fig = go.Figure(data=[go.Candlestick(x=df['date'],
+                                     open=df['Open'],
+                                     high=df['High'],
+                                     low=df['Low'],
+                                     close=df['Close'])])
+#Meta chart info
+fig.update_layout(
+    title = 'Stock Pric AAPL',
+    yaxis_title='Price($)',
+    xaxis_rangeslider_visible=False)
+#fig.show()
 
-    if intent["tag"] not in classes:
-      classes.append(intent["tag"])
+df.drop(['date','Volume'],axis=1,inplace=True)
+df.reset_index(drop=True, inplace=True)
+df.plot.line(y='Close',use_index=True)
 
-from nltk.stem.lancaster import LancasterStemmer
+x = df[['Open','Close', 'High', 'Low', 'Adj Close']]
+y = df[['Close']] #to predict
+X_train,X_test,Y_train,Y_test=train_test_split(x,y,test_size=.2,random_state=42)
 
-stemmer = LancasterStemmer()
-words_lowercase = [stemmer.stem(word.lower()) for word in words]
-words = sorted(list(set(words_lowercase)))
+rf = RandomForestRegressor(n_estimators=100, random_state=42)
 
-#  Build bag of words for ML model
+rf.fit(X_train,Y_train)
 
+y_pred = rf.predict(X_test)
 
+mse = mean_squared_error(Y_test,y_pred)
+print("MSE = ",mse)
 
-empty_output = [0] * len(classes)
-
-
-
-training_data = []
-
-for document in documents:
-  bag_of_words = []
-
-  pattern_words = document[0]
-  pattern_words = [stemmer.stem(word.lower()) for word in pattern_words]
-
-  for word in words:
-    bag_of_words.append(1) if word in pattern_words else bag_of_words.append(0)
-
-  output_row = list(empty_output)
-  output_row[classes.index(document[1])] = 1
-  training_data.append([bag_of_words, output_row])
-
-
-"""#  Split data for machine learning"""
-
-random.shuffle(training_data)
-training_numpy = numpy.array(training_data)
-
-print(training_numpy)
-
-print(type(training_numpy))
-
-train_X = list(training_numpy[:,0])
-
-print(train_X)
-
-print(len(train_X))
-
-train_y = list(training_numpy[:,1])
-
-print(train_y)
